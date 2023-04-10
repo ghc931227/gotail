@@ -1,3 +1,8 @@
+# A fork for https://github.com/nxadm/tail
+Add support for line parameter in tail  
+See [tailf.go](/cmd/tailf/tailf.go) for detail  
+Usage: tailf file.log 120
+
 [![Go Reference](https://pkg.go.dev/badge/github.com/nxadm/tail.svg)](https://pkg.go.dev/github.com/nxadm/tail#section-documentation)
 ![ci](https://github.com/nxadm/tail/workflows/ci/badge.svg)
 [![FreeBSD](https://api.cirrus-ci.com/github/nxadm/tail.svg)](https://cirrus-ci.com/github/nxadm/tail)
