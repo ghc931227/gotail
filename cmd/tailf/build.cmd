@@ -1,0 +1,1 @@
+go build tailf.go
