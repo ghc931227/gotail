@@ -2,11 +2,11 @@
 // Copyright (c) 2015 HPE Software Inc. All rights reserved.
 // Copyright (c) 2013 ActiveState Software Inc. All rights reserved.
 
-//nxadm/tail provides a Go library that emulates the features of the BSD `tail`
-//program. The library comes with full support for truncation/move detection as
-//it is designed to work with log rotation tools. The library works on all
-//operating systems supported by Go, including POSIX systems like Linux and
-//*BSD, and MS Windows. Go 1.9 is the oldest compiler release supported.
+// nxadm/tail provides a Go library that emulates the features of the BSD `tail`
+// program. The library comes with full support for truncation/move detection as
+// it is designed to work with log rotation tools. The library works on all
+// operating systems supported by Go, including POSIX systems like Linux and
+// *BSD, and MS Windows. Go 1.9 is the oldest compiler release supported.
 package tail
 
 import (
@@ -94,13 +94,13 @@ type Tail struct {
 	Lines    chan *Line // A consumable channel of *Line
 	Config              // Tail.Configuration
 
-	file    *os.File
+	File    *os.File
 	reader  *bufio.Reader
 	lineNum int
 
-	lineBuf *strings.Builder
+	LineBuf *strings.Builder
 
-	watcher watch.FileWatcher
+	Watcher watch.FileWatcher
 	changes *watch.FileChanges
 
 	tomb.Tomb // provides: Done, Kill, Dying
@@ -132,7 +132,7 @@ func TailFile(filename string, config Config) (*Tail, error) {
 	}
 
 	if config.CompleteLines {
-		t.lineBuf = new(strings.Builder)
+		t.LineBuf = new(strings.Builder)
 	}
 
 	// when Logger was not specified in config, use default logger
@@ -141,20 +141,20 @@ func TailFile(filename string, config Config) (*Tail, error) {
 	}
 
 	if t.Poll {
-		t.watcher = watch.NewPollingFileWatcher(filename)
+		t.Watcher = watch.NewPollingFileWatcher(filename)
 	} else {
-		t.watcher = watch.NewInotifyFileWatcher(filename)
+		t.Watcher = watch.NewInotifyFileWatcher(filename)
 	}
 
 	if t.MustExist {
 		var err error
-		t.file, err = OpenFile(t.Filename)
+		t.File, err = OpenFile(t.Filename)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	go t.tailFileSync()
+	go t.TailFileSync()
 
 	return t, nil
 }
@@ -163,10 +163,10 @@ func TailFile(filename string, config Config) (*Tail, error) {
 // Beware that this value may not be completely accurate because one line from
 // the chan(tail.Lines) may have been read already.
 func (tail *Tail) Tell() (offset int64, err error) {
-	if tail.file == nil {
+	if tail.File == nil {
 		return
 	}
-	offset, err = tail.file.Seek(0, io.SeekCurrent)
+	offset, err = tail.File.Seek(0, io.SeekCurrent)
 	if err != nil {
 		return
 	}
@@ -202,25 +202,25 @@ func (tail *Tail) close() {
 }
 
 func (tail *Tail) closeFile() {
-	if tail.file != nil {
-		tail.file.Close()
-		tail.file = nil
+	if tail.File != nil {
+		tail.File.Close()
+		tail.File = nil
 	}
 }
 
 func (tail *Tail) reopen() error {
-	if tail.lineBuf != nil {
-		tail.lineBuf.Reset()
+	if tail.LineBuf != nil {
+		tail.LineBuf.Reset()
 	}
 	tail.closeFile()
 	tail.lineNum = 0
 	for {
 		var err error
-		tail.file, err = OpenFile(tail.Filename)
+		tail.File, err = OpenFile(tail.Filename)
 		if err != nil {
 			if os.IsNotExist(err) {
 				tail.Logger.Printf("Waiting for %s to appear...", tail.Filename)
-				if err := tail.watcher.BlockUntilExists(&tail.Tomb); err != nil {
+				if err := tail.Watcher.BlockUntilExists(&tail.Tomb); err != nil {
 					if err == tomb.ErrDying {
 						return err
 					}
@@ -251,13 +251,13 @@ func (tail *Tail) readLine() (string, error) {
 		return line, err
 	}
 
-	if _, err := tail.lineBuf.WriteString(line); err != nil {
+	if _, err := tail.LineBuf.WriteString(line); err != nil {
 		return line, err
 	}
 
 	if newlineEnding {
-		line = tail.lineBuf.String()
-		tail.lineBuf.Reset()
+		line = tail.LineBuf.String()
+		tail.LineBuf.Reset()
 		return line, nil
 	} else {
 		if tail.Config.Follow {
@@ -267,7 +267,7 @@ func (tail *Tail) readLine() (string, error) {
 	}
 }
 
-func (tail *Tail) tailFileSync() {
+func (tail *Tail) TailFileSync() {
 	defer tail.Done()
 	defer tail.close()
 
@@ -284,7 +284,7 @@ func (tail *Tail) tailFileSync() {
 
 	// Seek to requested location on first open of the file.
 	if tail.Location != nil {
-		_, err := tail.file.Seek(tail.Location.Offset, tail.Location.Whence)
+		_, err := tail.File.Seek(tail.Location.Offset, tail.Location.Whence)
 		if err != nil {
 			tail.Killf("Seek error on %s: %s", tail.Filename, err)
 			return
@@ -368,16 +368,16 @@ func (tail *Tail) tailFileSync() {
 	}
 }
 
-// waitForChanges waits until the file has been appended, deleted,
-// moved or truncated. When moved or deleted - the file will be
+// waitForChanges waits until the File has been appended, deleted,
+// moved or truncated. When moved or deleted - the File will be
 // reopened if ReOpen is true. Truncated files are always reopened.
 func (tail *Tail) waitForChanges() error {
 	if tail.changes == nil {
-		pos, err := tail.file.Seek(0, io.SeekCurrent)
+		pos, err := tail.File.Seek(0, io.SeekCurrent)
 		if err != nil {
 			return err
 		}
-		tail.changes, err = tail.watcher.ChangeEvents(&tail.Tomb, pos)
+		tail.changes, err = tail.Watcher.ChangeEvents(&tail.Tomb, pos)
 		if err != nil {
 			return err
 		}
@@ -418,9 +418,9 @@ func (tail *Tail) openReader() {
 	tail.lk.Lock()
 	if tail.MaxLineSize > 0 {
 		// add 2 to account for newline characters
-		tail.reader = bufio.NewReaderSize(tail.file, tail.MaxLineSize+2)
+		tail.reader = bufio.NewReaderSize(tail.File, tail.MaxLineSize+2)
 	} else {
-		tail.reader = bufio.NewReader(tail.file)
+		tail.reader = bufio.NewReader(tail.File)
 	}
 	tail.lk.Unlock()
 }
@@ -430,12 +430,12 @@ func (tail *Tail) seekEnd() error {
 }
 
 func (tail *Tail) seekTo(pos SeekInfo) error {
-	_, err := tail.file.Seek(pos.Offset, pos.Whence)
+	_, err := tail.File.Seek(pos.Offset, pos.Whence)
 	if err != nil {
 		return fmt.Errorf("Seek error on %s: %s", tail.Filename, err)
 	}
 	// Reset the read buffer whenever the file is re-seek'ed
-	tail.reader.Reset(tail.file)
+	tail.reader.Reset(tail.File)
 	return nil
 }
 
