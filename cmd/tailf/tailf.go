@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"github.com/icza/backscanner"
 	"github.com/nxadm/tail"
 	"github.com/nxadm/tail/watch"
 	"io"
@@ -17,8 +18,8 @@ func main() {
 		fmt.Println("need one or more arguments")
 		return
 	}
-	logFile := os.Args[1] // 日志文件路径
-	tailLineNum := 25     // 从倒数第几行开始输出日志内容
+	logFile := os.Args[1] // log file path
+	tailLineNum := 25     // tail start at last n lines
 	if len(os.Args) > 2 {
 		tailLineNumArg, err := strconv.Atoi(os.Args[2])
 		if err != nil {
@@ -32,67 +33,65 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	fileInfo, err := file.Stat()
 	if err != nil {
 		log.Fatal(err)
 	}
-	fileLength := fileInfo.Size() // 文件总长度
-	foundedLineSeparator := 0     // 已经找到的行数, 每次找到"\n"时加一
+	fileLength := fileInfo.Size() // file length
 
-	chunkSize := int64(4096) // 分段读取, 每次读取一些字节, 再遍历这些字节查找"\n"
-	if chunkSize > fileLength {
-		chunkSize = fileLength
-	}
-	chunkLoop := int64(1)             // 循环次数
-	seekPos := -chunkLoop * chunkSize // 文件指针位置
+	scanner := backscanner.New(file, int(fileLength))
+	lineNum := 0
 	stack := &Stack{}
-	for foundedLineSeparator < tailLineNum {
-		file.Seek(seekPos, io.SeekEnd) // 从末尾开始读取
-		byteArr := make([]byte, chunkSize)
-		file.Read(byteArr)
-		// 倒序遍历读取到的字节
-		for seekPosInChunk := chunkSize - 1; seekPosInChunk >= 0 && foundedLineSeparator < tailLineNum; seekPosInChunk-- {
-			b := byteArr[seekPosInChunk]
-			if b == 10 { // 换行符
-				foundedLineSeparator++
+	for lineNum <= tailLineNum {
+		line, _, err := scanner.Line()
+		if err == nil {
+			for i := range line {
+				stack.Push(line[i])
 			}
-			stack.Push(b)
-		}
-		chunkLoop++
-		nextSeekPos := -chunkLoop * chunkSize
-		if -nextSeekPos > fileLength {
-			// 读取到末尾, 就算找完了
+			stack.Push(byte(10))
+			lineNum++
+		} else {
+			if err == io.EOF {
+				stack.Pop()
+			}
 			break
 		}
-		seekPos = nextSeekPos
 	}
 
-	// 遍历过的字节集中显示
-	checkedBytes := make([]byte, stack.Len()-1)
+	// show checked lines
+	checkedBytes := make([]byte, stack.Len())
 	for i := range checkedBytes {
 		checkedBytes[i] = stack.Pop().(byte)
 	}
 	fmt.Print(string(checkedBytes[:]))
 
-	// 重新计算下文件长度
-	newFileInfo, err := file.Stat()
+	// get file length, again
+	fileInfo, err = file.Stat()
 	if err != nil {
 		log.Fatal(err)
 	}
-	newFileLength := newFileInfo.Size()
+	newFileLength := fileInfo.Size()
 
-	// tail设置
+	// tail config
+	var seekInfo *tail.SeekInfo
+	if len(checkedBytes) == 0 {
+		seekInfo = &tail.SeekInfo{
+			Offset: 0,
+			Whence: io.SeekStart,
+		}
+	} else {
+		seekInfo = &tail.SeekInfo{
+			Offset: fileLength - newFileLength - 1,
+			Whence: io.SeekEnd,
+		}
+	}
 	config := tail.Config{
 		Follow:    true,
 		MustExist: true,
 		ReOpen:    true,
 		Poll:      true,
-		Location: &tail.SeekInfo{
-			// 一般是从-1开始, 就是最后一个字节开始读取, 有些时候在查找行数的时候时间过长,
-			// 可能文件长度已经发生了变化, 所以应该从第一次读取文件长度的时候最后一个字节的位置开始
-			Offset: fileLength - newFileLength - 1,
-			Whence: io.SeekEnd,
-		},
+		Location:  seekInfo,
 	}
 
 	t := tail.Tail{
@@ -102,13 +101,13 @@ func main() {
 	}
 
 	t.Logger = log.New(os.Stderr, "", log.LstdFlags)
-	//watch.POLL_DURATION = 125 * time.Millisecond
+	// watch.POLL_DURATION = 125 * time.Millisecond
 	t.Watcher = watch.NewPollingFileWatcher(logFile)
 	t.File = file
-	// 开始监视日志滚动
+	// start tail
 	go t.TailFileSync()
 
-	// 接收用户输入, 比如回车, 以实现console中手动给日志分段
+	// accept user input \n
 	reader := bufio.NewReader(os.Stdin)
 	go func() {
 		for {
@@ -116,7 +115,7 @@ func main() {
 		}
 	}()
 
-	// 持续输出日志
+	// start print log
 	for line := range t.Lines {
 		fmt.Println(line.Text)
 	}
